@@ -48,7 +48,7 @@ void initialize_alarm_system()
     // Alarm Display List initialization
     Alarm_Display_List = NULL; // Start empty
     // then
-    status = pthread_mutex_init(&alram_display_list_mutex, NULL); // initialize the mutex
+    status = pthread_mutex_init(&alarm_display_list_mutex, NULL); // initialize the mutex
     if (status != 0)
     {
         err_abort(status, "Initializing alarm display list mutex");
@@ -244,21 +244,67 @@ void *consumer_thread(void *arg)
 }
 
 extern alarm_t *Alarm_Display_List;
-extern pthread_mutex_t alram_display_list_mutex;
+extern pthread_mutex_t alarm_display_list_mutex;
 
 // IMPLEMENT PERDIODIC DISPLAY THREAD HERE
 void *periodic_display_thread(void *arg)
 {
+    alarm_t *temp;
+    while (1)
+    {
+        // Lock the mutex for safe access to the alarm display list
+        int status = pthread_mutex_lock(&alarm_display_list_mutex);
+        if (status != 0)
+        {
+            err_abort(status, "Lock alarm display list mutex"); // locking
+        }
+
+        // Go through the alarm display list
+        // to find alarms that should be dislayed now(time)
+        time_t now = time(NULL);
+        time_t next_alarm_time = now + 60;
+        alarm_t *temp = Alarm_Display_List;
+        while (temp != NULL)
+        {
+            if (temp->scheduled_time <= now)
+            {
+                printf("ALARM MESSAGE (%d) PRINTED BY ALARM DISPLAY THREAD: TIME = %ld MESSAGE = %s\n",
+                       temp->alarm_id, (long)temp->scheduled_time, temp->message);
+                // If the alarm is periodic , reschedule it.
+                temp->scheduled_time += temp->seconds; // Adjusting for periodic alarms.
+            }
+            // Find the earliest next alarm time to optimize sleep duration.
+            if (temp->scheduled_time < next_alarm_time)
+            {
+                next_alarm_time = temp->scheduled_time;
+            }
+            temp = temp->link;
+        }
+
+        status = pthread_mutex_unlock(&alarm_display_list_mutex);
+        if (status != 0)
+            err_abort(status, "Unlock alarm display list mutex");
+
+        // Sleep until the next alarm time or a maximum of 60 seconds.
+        time_t sleep_time = next_alarm_time - time(NULL);
+        sleep_time = (sleep_time > 0) ? sleep_time : 1; // Ensure it sleeps at least 1 second.
+        sleep(sleep_time);
+    }
+
+    return NULL;
 }
 
-// IMPLEMENT CIRCULAR BUFFER: DATA STRUCTURE BETWEEN THE ALARM THREAD AND CONSUMER THREAD
-typedef struct circular_buffer()
+/*// IMPLEMENT CIRCULAR BUFFER: DATA STRUCTURE BETWEEN THE ALARM THREAD AND CONSUMER THREAD
+typedef struct circular_buffer
 {
+
+
 }
 
 // IMPLEMENT Alarm_Display_List, DATASTRUCTURE BETWEEN THE CONSUMER THREAD AND PERIODIC DISPLAY THREAD
-typedef struct alram_display_list()
+typedef struct alram_display_list
 {
 }
 
 // IMPLEMENT A FUNCTION TO PROCESS THE ALARM REQUEST
+*/
