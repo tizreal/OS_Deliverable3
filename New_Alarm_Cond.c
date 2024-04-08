@@ -92,11 +92,6 @@ int main (int argc, char *argv[])
         switch (request_type) {
             case START_ALARM:
             {
-                /*
-                 * Parse input line into seconds (%d) and a message
-                 * (%64[^\n]), consisting of up to 64 characters
-                 * separated from the seconds by whitespace.
-                 */
                 if (sscanf(line, "Start_Alarm(%d): %d %128[^\n]", &alarm->id, &alarm->seconds, alarm->message) == 3) {
                     if (alarm->id <= 0 || alarm->seconds < 0) {
                         fprintf(stderr, "Alarm ID and Time must be positive\n");
@@ -130,34 +125,68 @@ int main (int argc, char *argv[])
             }
             case CHANGE_ALARM:
             {
-                int alarm_id;
-                int new_seconds;
-                char new_message[129];
-                
-                if(sscanf(line, "Change_Alarm(%d): %d %128[^\n]", &alarm_id, &new_seconds, new_message) == 3) {
-                    if(alarm_id < 0) {
-                        fprintf(stderr, "Alarm_ID must be positive\n");
-                    } else {
-                        // TODO: add logic
-                        printf("add logic\n");
+                if (sscanf(line, "Change_Alarm(%d): %d %128[^\n]", &alarm->id, &alarm->seconds, alarm->message) == 3) {
+                    if (alarm->id <= 0 || alarm->seconds < 0) {
+                        fprintf(stderr, "Alarm ID and Time must be positive\n");
+                        free(alarm);
+                        continue;  // Skip to the next iteration
                     }
+                    
+                    // Trunctuate Message
+                    alarm->message[MAX_MESSAGE_LENGTH] = '\0';
+                    
+                    // lock mutex in order to insert the alarm
+                    status = pthread_mutex_lock (&alarm_mutex);
+                    if (status != 0) err_abort (status, "Lock mutex");
+                    
+                    alarm->time = time (NULL) + alarm->seconds;
+
+                    
+                    alarm_insert(alarm);
+                    
+                    // unlock mutex
+                    status = pthread_mutex_unlock (&alarm_mutex);
+                    if (status != 0) err_abort (status, "Unlock mutex");
+                    
+                    printf("Main Thread has Inserted Change_Alarm Request(%d) at %ld: Time = %d Message = %s into Alarm List\n",
+                           alarm->id, time(NULL), alarm->seconds, alarm->message);
                 } else {
-                    fprintf(stderr, "Bad command format for Change_Alarm\n");
+                    fprintf (stderr, "Bad command\n");
+                    free (alarm);
                 }
                 break;
             }
             case CANCEL_ALARM:
             {
-                // Add Cancel Alarm Logic
                 int alarm_id;
                 if(sscanf(line, "Cancel_Alarm(%d)", &alarm_id) == 1) {
-                    if(alarm_id <= 0)
-                        fprintf(stderr, "Alarm_ID has to be positive\n");
-                    else
-                        // TODO: logic to cancel alarm
-                        printf("add logic\n");
+                    if (alarm->id <= 0 || alarm->seconds < 0) {
+                        fprintf(stderr, "Alarm ID and Time must be positive\n");
+                        free(alarm);
+                        continue;  // Skip to the next iteration
+                    }
+                    
+                    // Trunctuate Message
+                    alarm->message[MAX_MESSAGE_LENGTH] = '\0';
+                    
+                    // lock mutex in order to insert the alarm
+                    status = pthread_mutex_lock (&alarm_mutex);
+                    if (status != 0) err_abort (status, "Lock mutex");
+                    
+                    alarm->time = time (NULL) + alarm->seconds;
+
+                    
+                    alarm_insert(alarm);
+                    
+                    // unlock mutex
+                    status = pthread_mutex_unlock (&alarm_mutex);
+                    if (status != 0) err_abort (status, "Unlock mutex");
+                    
+                    printf("Main Thread has Inserted Cancel_Alarm Request(%d) at %ld: Time = %d into Alarm List\n",
+                           alarm->id, time(NULL), alarm->seconds);
                 } else {
-                    fprintf(stderr, "Bad command\n");
+                    fprintf (stderr, "Bad command\n");
+                    free (alarm);
                 }
                 break;
             }
