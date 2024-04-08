@@ -257,12 +257,16 @@ int main(int argc, char *argv[])
     int status;
     char line[128];
     alarm_t *alarm;
-    pthread_t thread;
+    pthread_t alarm_thread, consumer_thread;
 
-    status = pthread_create(
-        &thread, NULL, alarm_thread, NULL);
+    status = pthread_create(&alarm_thread, NULL, alarm_thread_func, NULL);
     if (status != 0)
         err_abort(status, "Create alarm thread");
+
+    status = pthread_create(&consumer_thread, NULL, consumer_thread_func, NULL);
+    if (status != 0)
+        err_abort(status, "Create consumer thread");
+
     while (1)
     {
         printf("Alarm> ");
@@ -274,13 +278,8 @@ int main(int argc, char *argv[])
         if (alarm == NULL)
             errno_abort("Allocate alarm");
 
-        /*
-         * Parse input line into seconds (%d) and a message
-         * (%64[^\n]), consisting of up to 64 characters
-         * separated from the seconds by whitespace.
-         */
-        if (sscanf(line, "%d %64[^\n]",
-                   &alarm->seconds, alarm->message) < 2)
+        char request_type[20];
+        if (sscanf(line, "%19s(%d): %d %128[^\n]", request_type, &alarm->alarm_id, &alarm->seconds, alarm->message) < 4)
         {
             fprintf(stderr, "Bad command\n");
             free(alarm);
@@ -291,17 +290,21 @@ int main(int argc, char *argv[])
             if (status != 0)
                 err_abort(status, "Lock mutex");
             alarm->scheduled_time = time(NULL) + alarm->seconds;
-            /*
-             * Insert the new alarm into the list of alarms,
-             * sorted by expiration time.
-             */
-            alarm_insert(alarm);
+
+            if (strcmp(request_type, "Start_Alarm") == 0 || strcmp(request_type, "Change_Alarm") == 0 || strcmp(request_type, "Cancel_Alarm") == 0)
+            {
+                alarm_insert(alarm);
+                time_t insert_time = time(NULL);
+                printf("Main Thread has Inserted %s Request(%d) at %s: Time = %d Message = %s into Alarm List\n", request_type, alarm->alarm_id, ctime(&insert_time), alarm->seconds, alarm->message);
+            }
+
             status = pthread_mutex_unlock(&alarm_mutex);
             if (status != 0)
                 err_abort(status, "Unlock mutex");
         }
     }
 }
+
 
 /// IMPLEMENTATION TODO
 
