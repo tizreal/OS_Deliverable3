@@ -19,6 +19,7 @@ typedef enum {
 } alarm_request_type;
 
 alarm_request_type get_request_type(const char *request_type);
+const char* alarm_type_to_string(alarm_request_type type);
 
 #endif /* alarm_utils_h */
 

@@ -18,3 +18,16 @@ alarm_request_type get_request_type(const char *request_type) {
         return INVALID_REQUEST;
     }
 }
+
+const char* alarm_type_to_string(alarm_request_type type) {
+    switch (type) {
+        case START_ALARM:
+            return "Start_Alarm";
+        case CHANGE_ALARM:
+            return "Change_Alarm";
+        case CANCEL_ALARM:
+            return "Cancel_Alarm";
+        default:
+            return "Unknown";
+    }
+}
