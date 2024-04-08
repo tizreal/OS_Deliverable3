@@ -15,6 +15,9 @@
 #include "errors.h"
 #include "alarm_utils.h"
 
+#define MAX_MESSAGE_LENGTH 128
+#define CIRCULAR_BUFFER_SIZE 4
+
 /*
  * The "alarm" structure now contains the time_t (time since the
  * Epoch, in seconds) for each alarm, so that they can be
@@ -27,8 +30,18 @@ typedef struct alarm_tag {
     struct alarm_tag    *link;
     int                 seconds;
     time_t              time;   /* seconds from EPOCH */
-    char                message[64];
+    char message        [MAX_MESSAGE_LENGTH + 1];
 } alarm_t;
+
+typedef struct {
+    alarm_t *buffer[CIRCULAR_BUFFER_SIZE];
+    int insert_at;
+    int remove_at;
+    int count;
+    pthread_mutex_t mutex;
+    pthread_cond_t not_empty;
+    pthread_cond_t not_full;
+} circular_buffer_t;
 
 // the alarm mutex is to control access to the alarm_list
 pthread_mutex_t alarm_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -43,58 +56,75 @@ alarm_t *alarm_list = NULL;
 // conditional variable to signal alarm thread(this avoid busy waiting and delegation from alarm thread to let other thread run)
 time_t current_alarm = 0;
 
-void alarm_insert (alarm_t *alarm);
-void *alarm_thread (void *arg);
+void alarm_insert(alarm_t *alarm);
+void *alarm_thread(void *arg);
+void *consumer_thread(void *arg);
 
 
 int main (int argc, char *argv[])
 {
     int status;
-    char line[128];
+    char line[129]; // increased to handle null terminator
     alarm_t *alarm;
-    pthread_t thread;
-
-    status = pthread_create (
-        &thread, NULL, alarm_thread, NULL);
+    pthread_t alarm_thread_id, consumer_thread_id;
+    
+    // create alarm thread
+    status = pthread_create (&alarm_thread_id, NULL, alarm_thread, NULL);
     if (status != 0)
         err_abort (status, "Create alarm thread");
+    
+    status = pthread_create (&consumer_thread_id, NULL, consumer_thread, NULL);
+    if (status != 0)
+        err_abort (status, "Create consumer thread");
+    
+    
     while (1) {
         printf ("Alarm> ");
         if (fgets (line, sizeof (line), stdin) == NULL) exit (0);
         if (strlen (line) <= 1) continue;
         
-        // start
-        alarm_request_type request_type = get_request_type(line);
+        alarm = (alarm_t*)malloc (sizeof (alarm_t));
+        if (alarm == NULL)
+            errno_abort ("Allocate alarm");
         
+        // pare the input line according to alarm request type
+        alarm_request_type request_type = get_request_type(line);
         switch (request_type) {
             case START_ALARM:
             {
-                alarm = (alarm_t*)malloc (sizeof (alarm_t));
-                if (alarm == NULL)
-                    errno_abort ("Allocate alarm");
-                
                 /*
                  * Parse input line into seconds (%d) and a message
                  * (%64[^\n]), consisting of up to 64 characters
                  * separated from the seconds by whitespace.
                  */
-                
-                if (sscanf(line, "Start_Alarm(%d): %d %128[^\n]", &alarm->id, &alarm->seconds, alarm->message) < 3) {
-                    fprintf (stderr, "Bad command\n");
-                    free (alarm);
-                } else {
+                if (sscanf(line, "Start_Alarm(%d): %d %128[^\n]", &alarm->id, &alarm->seconds, alarm->message) == 3) {
+                    if (alarm->id <= 0 || alarm->seconds < 0) {
+                        fprintf(stderr, "Alarm ID and Time must be positive\n");
+                        free(alarm);
+                        continue;  // Skip to the next iteration
+                    }
+                    
+                    // Trunctuate Message
+                    alarm->message[MAX_MESSAGE_LENGTH] = '\0';
+                    
                     // lock mutex in order to insert the alarm
                     status = pthread_mutex_lock (&alarm_mutex);
-                    if (status != 0)
-                        err_abort (status, "Lock mutex");
+                    if (status != 0) err_abort (status, "Lock mutex");
                     
                     alarm->time = time (NULL) + alarm->seconds;
-                    alarm_insert (alarm);
+
+                    
+                    alarm_insert(alarm);
                     
                     // unlock mutex
                     status = pthread_mutex_unlock (&alarm_mutex);
-                    if (status != 0)
-                        err_abort (status, "Unlock mutex");
+                    if (status != 0) err_abort (status, "Unlock mutex");
+                    
+                    printf("Main Thread has Inserted Start_Alarm Request(%d) at %ld: Time = %d Message = %s into Alarm List\n",
+                           alarm->id, time(NULL), alarm->seconds, alarm->message);
+                } else {
+                    fprintf (stderr, "Bad command\n");
+                    free (alarm);
                 }
                 break;
             }
@@ -135,8 +165,6 @@ int main (int argc, char *argv[])
                 fprintf(stderr, "Invalid Command\n");
                 break;
         }
-        // end
-    
     }
 }
 
@@ -147,6 +175,18 @@ int main (int argc, char *argv[])
  */
 void alarm_insert (alarm_t *alarm)
 {
+    
+    // TODO: might have to move the function below to consumer thread
+    // Check for duplicate ID
+    for (alarm_t *ptr = alarm_list; ptr != NULL; ptr = ptr->link) {
+        if (ptr->id == alarm->id) {
+            fprintf(stderr, "Alarm ID already exists.\n");
+            free(alarm);
+            alarm = NULL;
+            break;
+        }
+    }
+    
     int status;
     alarm_t **last, *next;
 
@@ -274,4 +314,10 @@ void *alarm_thread (void *arg)
             free (alarm);
         }
     }
+}
+
+void *consumer_thread(void *arg) {
+    // This thread consumes data from the circular buffer
+    // Placeholder for logic based on the requirements
+    return NULL;
 }

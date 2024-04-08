@@ -1,0 +1,13 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "C/C++ Runner: Debug Session",
+      "type": "lldb",
+      "request": "launch",
+      "args": [],
+      "cwd": "/Users/muhammedadeyemi/Desktop/WORK_OUT_YOUR_SALVATION/OS_Deliverable3/OS_ASSIGNMENT/OS_ASSIGNMENT",
+      "program": "/Users/muhammedadeyemi/Desktop/WORK_OUT_YOUR_SALVATION/OS_Deliverable3/OS_ASSIGNMENT/OS_ASSIGNMENT/build/Debug/outDebug"
+    }
+  ]
+}
