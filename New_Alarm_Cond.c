@@ -114,6 +114,73 @@ void alarm_insert(alarm_t *alarm)
     }
 }
 
+
+void change_alarm(int alarm_id, int time, char *message)
+{
+    int status;
+    alarm_t *alarm, *prev = NULL;
+
+    status = pthread_mutex_lock(&alarm_mutex);
+    if (status != 0)
+        err_abort(status, "Lock mutex");
+
+    for (alarm = alarm_list; alarm != NULL; alarm = alarm->link)
+    {
+        if (alarm->alarm_id == alarm_id)
+            break;
+        prev = alarm;
+    }
+
+    if (alarm != NULL)
+    {
+        alarm->seconds = time;
+        alarm->scheduled_time = time(NULL) + time;
+        strncpy(alarm->message, message, sizeof(alarm->message) - 1);
+
+        if (prev != NULL)
+            prev->link = alarm->link;
+        else
+            alarm_list = alarm->link;
+        alarm_insert(alarm);
+    }
+
+    status = pthread_mutex_unlock(&alarm_mutex);
+    if (status != 0)
+        err_abort(status, "Unlock mutex");
+}
+
+
+void cancel_alarm(int alarm_id)
+{
+    int status;
+    alarm_t *alarm, *prev = NULL;
+
+    status = pthread_mutex_lock(&alarm_mutex);
+    if (status != 0)
+        err_abort(status, "Lock mutex");
+
+    for (alarm = alarm_list; alarm != NULL; alarm = alarm->link)
+    {
+        if (alarm->alarm_id == alarm_id)
+            break;
+        prev = alarm;
+    }
+
+    if (alarm != NULL)
+    {
+        if (prev != NULL)
+            prev->link = alarm->link;
+        else
+            alarm_list = alarm->link;
+        free(alarm);
+    }
+
+    status = pthread_mutex_unlock(&alarm_mutex);
+    if (status != 0)
+        err_abort(status, "Unlock mutex");
+}
+
+
 /*
  * The alarm thread's start routine.
  */
