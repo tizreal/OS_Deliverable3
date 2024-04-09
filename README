@@ -1,4 +1,4 @@
-1. First copy the files "alarm_cond.c", and "errors.h" into your
+1. First copy the files "New_Alarm_Cond.c", and "errors.h" into your
    own directory.
 
 2. To compile the program "alarm_cond.c", use the following command:
@@ -15,7 +15,7 @@
 
 (To exit from the program, type Ctrl-d.)
 
-5.. Read pages 82-88 of the book "Programming with POSIX Threads"
+5. Read pages 82-88 of the book "Programming with POSIX Threads"
 by David R. Butenhof for a detailed explanation of how the
 program "alarm_cond.c" works.
 (The book "Programming with POSIX Threads" has been put on
@@ -27,4 +27,4 @@ reserve in Steacie Library.)
 
 2. Type `./New_Alarm_Cond` to run the program
 
-3. Type `make clean` to clean up the generted compile files
+3. Type `make clean` to clean up the generated compiled files
