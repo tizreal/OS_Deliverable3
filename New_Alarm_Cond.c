@@ -53,6 +53,17 @@ typedef struct {
     pthread_cond_t not_full;
 } circular_buffer_t;
 
+typedef struct alarm_display_tag {
+    int id;
+    struct alarm_display_tag *link;
+    int seconds;
+    time_t time;
+    char message[MAX_MESSAGE_LENGTH + 1];
+} alarm_display_t;
+
+alarm_display_t *alarm_display_list = NULL;
+pthread_mutex_t alarm_display_mutex = PTHREAD_MUTEX_INITIALIZER;
+
 // the alarm mutex is to control access to the alarm_list
 pthread_mutex_t alarm_mutex = PTHREAD_MUTEX_INITIALIZER;
 
@@ -76,8 +87,11 @@ void handle_start_alarm(alarm_t *alarm);
 void handle_change_alarm(alarm_t *alarm);
 void handle_cancel_alarm(int alarm_id);
 pthread_t create_periodic_display_thread(alarm_t *alarm);
-void initialize_circular_buffer();
-void destroy_circular_buffer();
+void initialize_circular_buffer(void);
+void destroy_circular_buffer(void);
+void insert_alarm_display_list(alarm_t *alarm);
+void update_alarm_display_list(alarm_t *alarm);
+void remove_alarm_display_list(alarm_t *alarm);
 
 
 int main (int argc, char *argv[])
@@ -364,12 +378,6 @@ void *alarm_thread (void *arg)
     }
 }
 
-void *consumer_thread(void *arg) {
-    // This thread consumes data from the circular buffer
-    // Placeholder for logic based on the requirements
-    return NULL;
-}
-
 
 void handle_start_alarm(alarm_t *new_alarm) {
     // insert the new alarm
@@ -527,3 +535,63 @@ void destroy_circular_buffer() {
     pthread_cond_destroy(&circ_buff.not_empty);
     pthread_cond_destroy(&circ_buff.not_full);
 }
+
+void *consumer_thread(void *arg) {
+    alarm_t *alarm;
+
+    while (1) {
+        pthread_mutex_lock(&circ_buff.mutex);
+
+        while (circ_buff.count == 0) {
+            pthread_cond_wait(&circ_buff.not_empty, &circ_buff.mutex);
+        }
+
+        alarm = circ_buff.buffer[circ_buff.remove_at];
+        circ_buff.remove_at = (circ_buff.remove_at + 1) % CIRCULAR_BUFFER_SIZE;
+        circ_buff.count--;
+
+        pthread_cond_signal(&circ_buff.not_full);
+        pthread_mutex_unlock(&circ_buff.mutex);
+
+        // Now, interact with the Alarm Display List based on the alarm type
+        pthread_mutex_lock(&alarm_display_mutex);
+        switch (alarm->alarm_type) {
+            case START_ALARM:
+                // Insert the alarm into the Alarm Display List
+                insert_alarm_display_list(alarm);
+                break;
+            case CHANGE_ALARM:
+                // Update the alarm in the Alarm Display List
+                update_alarm_display_list(alarm);
+                break;
+            case CANCEL_ALARM:
+                // Remove the alarm from the Alarm Display List
+                remove_alarm_display_list(alarm->id);
+                break;
+        }
+        pthread_mutex_unlock(&alarm_display_mutex);
+
+        // Print retrieval confirmation
+        time_t retrieve_time = time(NULL);
+        printf("Consumer Thread has Retrieved Alarm_Request_Type %s Request(%d) at %ld: Time = %d Message = %s from Circular_Buffer Index: %d\n",
+               alarm_type_to_string(alarm->alarm_type),
+               alarm->id, retrieve_time, alarm->seconds, alarm->message, circ_buff.remove_at);
+        
+        free(alarm);
+    }
+
+    return NULL;
+}
+
+void insert_alarm_display_list(alarm_t *alarm) {
+    
+}
+
+void update_alarm_display_list(alarm_t *alarm) {
+    
+}
+
+void remove_alarm_display_list(alarm_t *alarm) {
+    
+}
+
