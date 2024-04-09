@@ -80,14 +80,13 @@ alarm_t *alarm_list = NULL;
 // conditional variable to signal alarm thread(this avoid busy waiting and delegation from alarm thread to let other thread run)
 time_t current_alarm = 0;
 
-alarm_request_type get_request_type(const char *request_type);
-const char* alarm_type_to_string(alarm_request_type type);
+
 void alarm_insert(alarm_t *alarm);
 void *alarm_thread(void *arg);
 void *consumer_thread(void *arg);
 void handle_start_alarm(alarm_t *alarm);
 void handle_change_alarm(alarm_t *alarm);
-void handle_cancel_alarm(int alarm_id);
+void handle_cancel_alarm(alarm_t *alarm);
 pthread_t create_periodic_display_thread(alarm_t *alarm);
 void initialize_circular_buffer(void);
 void destroy_circular_buffer(void);
@@ -247,16 +246,8 @@ void alarm_insert (alarm_t *alarm)
 {
         
     int status;
-    alarm_t **last, *next;
-
-    /*
-     * LOCKING PROTOCOL:
-     * 
-     * This routine requires that the caller have locked the
-     * alarm_mutex!
-     */
-    last = &alarm_list;
-    next = *last;
+    alarm_t **last = &alarm_list, *next = *last;
+    
     while (next != NULL) {
         if (next->time >= alarm->time) {
             // insert new alarm before the next
@@ -277,11 +268,12 @@ void alarm_insert (alarm_t *alarm)
         alarm->link = NULL;
     }
 #ifdef DEBUG
-    printf ("[list: ");
-    for (next = alarm_list; next != NULL; next = next->link)
-        printf ("%d(%d)[\"%s\"] ", next->time,
-            next->time - time (NULL), next->message);
-    printf ("]\n");
+//    printf("ignore\n");
+//    printf ("[list: ");
+//    for (next = alarm_list; next != NULL; next = next->link)
+//        printf ("%d(%d)[\"%s\"] ", next->time,
+//            next->time - time (NULL), next->message);
+//    printf ("]\n");
 #endif
     /*
      * Wake the alarm thread if it is not busy (that is, if
@@ -343,7 +335,7 @@ void *alarm_thread (void *arg)
                 handle_change_alarm(alarm);
                 break;
             case CANCEL_ALARM:
-                handle_cancel_alarm(alarm->id);
+                handle_cancel_alarm(alarm);
                 free(alarm);
                 break;
             default:
@@ -458,8 +450,9 @@ void handle_change_alarm(alarm_t *new_alarm) {
            (unsigned long)pthread_self(), change_time, alarm->id, alarm->id, alarm->seconds, alarm->message);
 }
 
-void handle_cancel_alarm(int alarm_id) {
+void handle_cancel_alarm(alarm_t *alarm) {
     // Temporary pointer for alarms to be freed
+    int alarm_id = alarm->id;
     alarm_t *to_free;
     
     // Pointers to traverse the alarm list
@@ -481,7 +474,7 @@ void handle_cancel_alarm(int alarm_id) {
     }
     
     pthread_mutex_lock(&alarm_display_mutex);
-    remove_alarm_display_list(alarm_id);
+    remove_alarm_display_list(alarm);
     pthread_mutex_unlock(&alarm_display_mutex);
     
     // After the alarms are removed, print the cancellation confirmation
@@ -582,7 +575,7 @@ void *consumer_thread(void *arg) {
                 break;
             case CANCEL_ALARM:
                 // Remove the alarm from the Alarm Display List
-                remove_alarm_display_list(alarm->id);
+                remove_alarm_display_list(alarm);
                 break;
         }
         pthread_mutex_unlock(&alarm_display_mutex);
@@ -592,8 +585,10 @@ void *consumer_thread(void *arg) {
         printf("Consumer Thread has Retrieved Alarm_Request_Type %s Request(%d) at %ld: Time = %d Message = %s from Circular_Buffer Index: %d\n",
                alarm_type_to_string(alarm->alarm_type),
                alarm->id, retrieve_time, alarm->seconds, alarm->message, circ_buff.remove_at);
-        
-        free(alarm);
+        if(alarm) {
+            free(alarm);
+            alarm = NULL;
+        }
     }
     return NULL;
 }
@@ -605,10 +600,15 @@ void insert_alarm_display_list(alarm_t *alarm) {
         return;
     }
 
+    memset(new_alarm, 0, sizeof(alarm_display_t));
+    
     new_alarm->id = alarm->id;
     new_alarm->seconds = alarm->seconds;
     new_alarm->time = alarm->time;
-    strcpy(new_alarm->message, alarm->message);
+    
+    // Use strncpy and manually add null terminator to be safe
+     strncpy(new_alarm->message, alarm->message, MAX_MESSAGE_LENGTH);
+     new_alarm->message[MAX_MESSAGE_LENGTH] = '\0'; // Ensure null-termination
 
     alarm_display_t **last = &alarm_display_list, *current = *last;
 
