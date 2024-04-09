@@ -18,6 +18,7 @@
 
 #define MAX_MESSAGE_LENGTH 128
 #define CIRCULAR_BUFFER_SIZE 4
+#define MAX_PERIODIC_THREADS 10
 
 typedef enum {false, true} bool;
 
@@ -74,6 +75,8 @@ pthread_cond_t alarm_cond = PTHREAD_COND_INITIALIZER;
 
 circular_buffer_t circ_buff;
 
+pthread_t periodic_thread_ids[MAX_PERIODIC_THREADS];
+int num_periodic_threads = 0;
 
 // data structure used to communicate between main and alarm thread
 alarm_t *alarm_list = NULL;
@@ -107,6 +110,7 @@ void end_write();
 
 int main (int argc, char *argv[])
 {
+    init_semaphores(); // Initialize semaphores at the beginning
     initialize_circular_buffer();
     
     int status;
@@ -425,6 +429,8 @@ void handle_start_alarm(alarm_t *new_alarm) {
 }
 
 void handle_change_alarm(alarm_t *new_alarm) {
+    start_write(); // Start of critical section for writers
+
     // insert the alarm into the list
     alarm_insert(new_alarm);
     
@@ -471,6 +477,7 @@ void handle_change_alarm(alarm_t *new_alarm) {
            "Alarm ID %d From Alarm List Except The Most Recent Change Alarm "
            "Request(%d) Time = %d Message = %s\n",
            (unsigned long)pthread_self(), change_time, alarm->id, alarm->id, alarm->seconds, alarm->message);
+    end_write(); // End of critical section for writers
 }
 
 void handle_cancel_alarm(alarm_t *alarm) {
@@ -513,38 +520,36 @@ void* periodic_display_thread(void* arg) {
 
     while (true) {
         // Use semaphores for reading
-        start_read(); 
+        start_read();
 
         // Check if the alarm should still be displayed
         bool display_alarm = false;
         alarm_display_t *current = alarm_display_list;
         while (current != NULL) {
-            if (current->id == display_args->id) {
-                // Check if the time matches
-                if (current->time == time(NULL)) {
-                    display_alarm = true;
-                    // Print the message if the alarm is still active
-                    printf("ALARM MESSAGE (%d) PRINTED BY ALARM DISPLAY THREAD %lu at %ld: TIME = %d MESSAGE = %s\n",
-                           current->id,
-                           (unsigned long)pthread_self(),
-                           (long)time(NULL),
-                           current->seconds,
-                           current->message);
-                }
+            if (current->id == display_args->id && current->seconds == display_args->seconds) {
+                display_alarm = true;
                 break;
             }
             current = current->link;
         }
-
+        
         end_read(); // Release read lock
-
-        if (!display_alarm) {
-            // The alarm has been canceled or changed, exit the thread
+        
+        if (display_alarm) {
+            // Print the message if the alarm is still active
+            printf("ALARM MESSAGE (%d) PRINTED BY ALARM DISPLAY THREAD %lu at %ld: TIME = %d MESSAGE = %s\n",
+                   display_args->id,
+                   (unsigned long)pthread_self(),
+                   (long)time(NULL),
+                   display_args->seconds,
+                   display_args->message);
+        } else {
+            printf("Display Thread <%lu> Stopping: No active alarm found for ID %d.\n", (unsigned long)pthread_self(), display_args->id);
             free(display_args); 
-            return NULL;
+            return NULL; // Exit the thread if the alarm has been canceled or changed
         }
-
-        // Sleep for the specified number of seconds
+        
+        // Sleep for the specified number of seconds before checking again
         sleep(display_args->seconds);
     }
 }
