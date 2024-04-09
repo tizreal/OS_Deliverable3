@@ -338,7 +338,14 @@ void *alarm_thread (void *arg)
                 handle_cancel_alarm(alarm);
                 free(alarm);
                 break;
+            case INVALID_REQUEST:
+                  // Handle invalid request, perhaps with an error message or logging
+                  printf("Invalid request type received.\n");
+                  free(alarm);
+                  break;
             default:
+                // Optionally handle any other cases that are not expected
+                printf("Unknown request type received.\n");
                 free(alarm);
                 break;
         }
@@ -576,6 +583,16 @@ void *consumer_thread(void *arg) {
             case CANCEL_ALARM:
                 // Remove the alarm from the Alarm Display List
                 remove_alarm_display_list(alarm);
+                break;
+            case INVALID_REQUEST:
+                  // Handle invalid request, perhaps with an error message or logging
+                  printf("Invalid request type received.\n");
+                  free(alarm);
+                  break;
+            default:
+                // Optionally handle any other cases that are not expected
+                printf("Unknown request type received.\n");
+                free(alarm);
                 break;
         }
         pthread_mutex_unlock(&alarm_display_mutex);
