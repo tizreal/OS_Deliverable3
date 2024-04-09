@@ -382,6 +382,11 @@ void *alarm_thread (void *arg)
 void handle_start_alarm(alarm_t *new_alarm) {
     // insert the new alarm
     alarm_insert(new_alarm);
+    
+    // Insert the new alarm into the Alarm Display List.
+    pthread_mutex_lock(&alarm_display_mutex);
+    insert_alarm_display_list(new_alarm);
+    pthread_mutex_unlock(&alarm_display_mutex);
 
     // Check if the Time value of this start_alarm is unique in the Alarm List
     bool is_unique_time = true;
@@ -405,6 +410,11 @@ void handle_start_alarm(alarm_t *new_alarm) {
 void handle_change_alarm(alarm_t *new_alarm) {
     // insert the alarm into the list
     alarm_insert(new_alarm);
+    
+    // Update the alarm in the Alarm Display List.
+    pthread_mutex_lock(&alarm_display_mutex);
+    update_alarm_display_list(new_alarm);
+    pthread_mutex_unlock(&alarm_display_mutex);
     
     // Check if the Time value of this change_alarm is unique
     bool is_unique_time = true;
@@ -467,6 +477,11 @@ void handle_cancel_alarm(int alarm_id) {
             next = next->link;
         }
     }
+    
+    // Remove the alarm from the Alarm Display List.
+    pthread_mutex_lock(&alarm_display_mutex);
+    remove_alarm_display_list(alarm_id);
+    pthread_mutex_unlock(&alarm_display_mutex);
     
     // After the alarms are removed, print the cancellation confirmation
     time_t remove_time = time(NULL);
@@ -579,19 +594,63 @@ void *consumer_thread(void *arg) {
         
         free(alarm);
     }
-
     return NULL;
 }
 
 void insert_alarm_display_list(alarm_t *alarm) {
-    
+    alarm_display_t *new_alarm = (alarm_display_t *)malloc(sizeof(alarm_display_t));
+    if (!new_alarm) {
+        perror("Failed to allocate memory for alarm");
+        return;
+    }
+
+    new_alarm->id = alarm->id;
+    new_alarm->seconds = alarm->seconds;
+    new_alarm->time = alarm->time;
+    strcpy(new_alarm->message, alarm->message);
+
+    alarm_display_t **last = &alarm_display_list, *current = *last;
+
+    while (current != NULL) {
+        if (current->time >= new_alarm->time) {
+            new_alarm->link = current;
+            *last = new_alarm;
+            break;
+        }
+        last = &current->link;
+        current = current->link;
+    }
+
+    if (current == NULL) {
+        *last = new_alarm;
+        new_alarm->link = NULL;
+    }
 }
 
 void update_alarm_display_list(alarm_t *alarm) {
-    
+    alarm_display_t *current = alarm_display_list;
+    while (current != NULL) {
+        if (current->id == alarm->id) {
+            current->seconds = alarm->seconds;
+            current->time = alarm->time;
+            strcpy(current->message, alarm->message);
+            break;
+        }
+        current = current->link;
+    }
 }
 
 void remove_alarm_display_list(alarm_t *alarm) {
-    
+    alarm_display_t **current = &alarm_display_list, *temp;
+
+    while (*current != NULL) {
+        if ((*current)->id == alarm->id) {
+            temp = *current;
+            *current = (*current)->link;
+            free(temp);
+        } else {
+            current = &(*current)->link;
+        }
+    }
 }
 
