@@ -509,7 +509,10 @@ void* periodic_display_thread(void* arg) {
         sleep(display_args->seconds);
     }
 
-    free(display_args);
+    if(display_args != NULL) {
+      free(display_args);
+      display_args = NULL;
+    }
     return NULL;
 }
 
