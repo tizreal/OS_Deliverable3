@@ -13,20 +13,12 @@
 #include <pthread.h>
 #include <time.h>
 #include "errors.h"
-#include <string.h>
-//#include "alarm_utils.h"
+#include "alarm_utils.h"
 
 #define MAX_MESSAGE_LENGTH 128
 #define CIRCULAR_BUFFER_SIZE 4
 
 typedef enum {false, true} bool;
-
-typedef enum {
-    START_ALARM,
-    CHANGE_ALARM,
-    CANCEL_ALARM,
-    INVALID_REQUEST
-} alarm_request_type;
 
 typedef struct {
     int id;
@@ -87,8 +79,6 @@ alarm_t *alarm_list = NULL;
 
 // conditional variable to signal alarm thread(this avoid busy waiting and delegation from alarm thread to let other thread run)
 time_t current_alarm = 0;
-
-
 
 alarm_request_type get_request_type(const char *request_type);
 const char* alarm_type_to_string(alarm_request_type type);
@@ -490,7 +480,6 @@ void handle_cancel_alarm(int alarm_id) {
         }
     }
     
-    // Remove the alarm from the Alarm Display List.
     pthread_mutex_lock(&alarm_display_mutex);
     remove_alarm_display_list(alarm_id);
     pthread_mutex_unlock(&alarm_display_mutex);
@@ -666,27 +655,3 @@ void remove_alarm_display_list(alarm_t *alarm) {
     }
 }
 
-alarm_request_type get_request_type(const char *request_type) {
-    if (strncmp(request_type, "Start_Alarm", 11) == 0) {
-        return START_ALARM;
-    } else if (strncmp(request_type, "Change_Alarm", 12) == 0) {
-        return CHANGE_ALARM;
-    } else if (strncmp(request_type, "Cancel_Alarm", 12) == 0) {
-        return CANCEL_ALARM;
-    } else {
-        return INVALID_REQUEST;
-    }
-}
-
-const char* alarm_type_to_string(alarm_request_type type) {
-    switch (type) {
-        case START_ALARM:
-            return "Start_Alarm";
-        case CHANGE_ALARM:
-            return "Change_Alarm";
-        case CANCEL_ALARM:
-            return "Cancel_Alarm";
-        default:
-            return "Unknown";
-    }
-}
