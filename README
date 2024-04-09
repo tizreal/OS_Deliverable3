@@ -3,7 +3,7 @@
 
 2. To compile the program "alarm_cond.c", use the following command:
 
-      cc alarm_cond.c -D_POSIX_PTHREAD_SEMANTICS -lpthread
+   cc alarm_cond.c -D_POSIX_PTHREAD_SEMANTICS -lpthread
 
 3. Type "a.out" to run the executable code.
 
@@ -13,10 +13,18 @@
 
    ALARM> 2 Good Morning!
 
-  (To exit from the program, type Ctrl-d.)
+(To exit from the program, type Ctrl-d.)
 
 5.. Read pages 82-88 of the book "Programming with POSIX Threads"
-   by David R. Butenhof for a detailed explanation of how the
-   program "alarm_cond.c" works.
-   (The book "Programming with POSIX Threads" has been put on
-   reserve in Steacie Library.)
+by David R. Butenhof for a detailed explanation of how the
+program "alarm_cond.c" works.
+(The book "Programming with POSIX Threads" has been put on
+reserve in Steacie Library.)
+
+## HOW TO RUN PROGRAM
+
+1. Type `make` to compile
+
+2. Type `./New_Alarm_Cond` to run the program
+
+3. Type `make clean` to clean up the generted compile files
