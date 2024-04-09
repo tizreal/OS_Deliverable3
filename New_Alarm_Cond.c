@@ -14,6 +14,7 @@
 #include <time.h>
 #include "errors.h"
 #include "alarm_utils.h"
+#include <semaphore.h>
 
 #define MAX_MESSAGE_LENGTH 128
 #define CIRCULAR_BUFFER_SIZE 4
@@ -79,6 +80,10 @@ alarm_t *alarm_list = NULL;
 
 // conditional variable to signal alarm thread(this avoid busy waiting and delegation from alarm thread to let other thread run)
 time_t current_alarm = 0;
+
+sem_t rw_mutex;    // Semaphore to protect access to critical section for writers
+sem_t mutex;       // Semaphore to protect the reader_count variable
+int reader_count;  // Count of readers reading the resource
 
 
 void alarm_insert(alarm_t *alarm);
@@ -389,6 +394,10 @@ void handle_start_alarm(alarm_t *new_alarm) {
     insert_alarm_display_list(new_alarm);
     pthread_mutex_unlock(&alarm_display_mutex);
 
+    int status = pthread_mutex_lock (&alarm_mutex);
+    if (status != 0)
+        err_abort (status, "Lock mutex");
+
     // Check if the Time value of this start_alarm is unique in the Alarm List
     bool is_unique_time = true;
     for (alarm_t *iter = alarm_list; iter != NULL; iter = iter->link) {
@@ -397,6 +406,8 @@ void handle_start_alarm(alarm_t *new_alarm) {
             break;
         }
     }
+
+    pthread_mutex_unlock(&alarm_mutex);
     
     // If the time is unique, create a new periodic display thread
     pthread_t display_thread_id;
@@ -496,24 +507,41 @@ void* periodic_display_thread(void* arg) {
     periodic_display_args_t* display_args = (periodic_display_args_t*)arg;
 
     while (true) {
-        // Your logic for checking if the alarm should still be displayed goes here
+        // Use semaphores for reading
+        start_read(); 
 
-        printf("ALARM MESSAGE (%d) PRINTED BY ALARM DISPLAY THREAD %lu at %ld: TIME = %d MESSAGE = %s\n",
-               display_args->id,
-               (unsigned long)pthread_self(),
-               (long)time(NULL),
-               display_args->seconds,
-               display_args->message);
+        // Check if the alarm should still be displayed
+        bool display_alarm = false;
+        alarm_display_t *current = alarm_display_list;
+        while (current != NULL) {
+            if (current->id == display_args->id) {
+                // Check if the time matches
+                if (current->time == time(NULL)) {
+                    display_alarm = true;
+                    // Print the message if the alarm is still active
+                    printf("ALARM MESSAGE (%d) PRINTED BY ALARM DISPLAY THREAD %lu at %ld: TIME = %d MESSAGE = %s\n",
+                           current->id,
+                           (unsigned long)pthread_self(),
+                           (long)time(NULL),
+                           current->seconds,
+                           current->message);
+                }
+                break;
+            }
+            current = current->link;
+        }
+
+        end_read(); // Release read lock
+
+        if (!display_alarm) {
+            // The alarm has been canceled or changed, exit the thread
+            free(display_args); 
+            return NULL;
+        }
 
         // Sleep for the specified number of seconds
         sleep(display_args->seconds);
     }
-
-    if(display_args != NULL) {
-      free(display_args);
-      display_args = NULL;
-    }
-    return NULL;
 }
 
 pthread_t create_periodic_display_thread(alarm_t *alarm) {
@@ -675,3 +703,40 @@ void remove_alarm_display_list(alarm_t *alarm) {
     }
 }
 
+
+void init_semaphores() {
+    sem_init(&rw_mutex, 0, 1);
+    sem_init(&mutex, 0, 1);
+    reader_count = 0;
+}
+
+void destroy_semaphores() {
+    sem_destroy(&rw_mutex);
+    sem_destroy(&mutex);
+}
+
+void start_read() {
+    sem_wait(&mutex);
+    reader_count++;
+    if (reader_count == 1) {
+        sem_wait(&rw_mutex); // First reader locks the resource from writers
+    }
+    sem_post(&mutex);
+}
+
+void end_read() {
+    sem_wait(&mutex);
+    reader_count--;
+    if (reader_count == 0) {
+        sem_post(&rw_mutex); // Last reader unlocks the resource for writers
+    }
+    sem_post(&mutex);
+}
+
+void start_write() {
+    sem_wait(&rw_mutex); // Lock the resource for writing
+}
+
+void end_write() {
+    sem_post(&rw_mutex); // Unlock the resource after writing
+}
