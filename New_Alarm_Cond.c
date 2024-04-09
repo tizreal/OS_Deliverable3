@@ -98,7 +98,12 @@ void destroy_circular_buffer(void);
 void insert_alarm_display_list(alarm_t *alarm);
 void update_alarm_display_list(alarm_t *alarm);
 void remove_alarm_display_list(alarm_t *alarm);
-
+void init_semaphores();
+void destroy_semaphores();
+void start_read();
+void end_read();
+void start_write();
+void end_write();
 
 int main (int argc, char *argv[])
 {
