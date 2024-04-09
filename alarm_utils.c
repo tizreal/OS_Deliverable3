@@ -31,3 +31,4 @@ const char* alarm_type_to_string(alarm_request_type type) {
             return "Unknown";
     }
 }
+

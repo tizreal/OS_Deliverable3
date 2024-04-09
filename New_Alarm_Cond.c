@@ -18,6 +18,14 @@
 #define MAX_MESSAGE_LENGTH 128
 #define CIRCULAR_BUFFER_SIZE 4
 
+typedef enum {false, true} bool;
+
+typedef struct {
+    int id;
+    int seconds;
+    char message[MAX_MESSAGE_LENGTH + 1];
+} periodic_display_args_t;
+
 /*
  * The "alarm" structure now contains the time_t (time since the
  * Epoch, in seconds) for each alarm, so that they can be
@@ -67,10 +75,15 @@ void *consumer_thread(void *arg);
 void handle_start_alarm(alarm_t *alarm);
 void handle_change_alarm(alarm_t *alarm);
 void handle_cancel_alarm(int alarm_id);
+pthread_t create_periodic_display_thread(alarm_t *alarm);
+void initialize_circular_buffer();
+void destroy_circular_buffer();
 
 
 int main (int argc, char *argv[])
 {
+    initialize_circular_buffer();
+    
     int status;
     char line[129]; // increased to handle null terminator
     alarm_t *alarm;
@@ -211,23 +224,12 @@ int main (int argc, char *argv[])
 
 
 /*
- * Insert alarm entry on list, in order(ascending order).
+ * Insert alarm request entry on list, in order(ascending order).
  Sorted from earliest time to latest time
  */
 void alarm_insert (alarm_t *alarm)
 {
-    
-    // TODO: might have to move the function below to consumer thread
-    // Check for duplicate ID
-    for (alarm_t *ptr = alarm_list; ptr != NULL; ptr = ptr->link) {
-        if (ptr->id == alarm->id) {
-            fprintf(stderr, "Alarm ID already exists.\n");
-            free(alarm);
-            alarm = NULL;
-            break;
-        }
-    }
-    
+        
     int status;
     alarm_t **last, *next;
 
@@ -315,7 +317,6 @@ void *alarm_thread (void *arg)
         // get earliest alarm for processing
         alarm = alarm_list;
         alarm_list = alarm->link;
-        pthread_mutex_unlock(&alarm_mutex);
         
         // Dispatch to the appropriate handler based on the type of the alarm
         switch (alarm->alarm_type) {
@@ -333,6 +334,8 @@ void *alarm_thread (void *arg)
                 free(alarm);
                 break;
         }
+        pthread_mutex_unlock(&alarm_mutex);
+
         
         // Insert the alarm into the Circular_Buffer
         pthread_mutex_lock(&circ_buff.mutex);
@@ -351,7 +354,7 @@ void *alarm_thread (void *arg)
         
         // Print the insertion confirmation
         time_t insert_time = time(NULL);
-        printf("Alarm Thread has Inserted %s Request(%d) at %ld: Time = %d Message = %s into Circular_Buffer Index: %d\n",
+        printf("Alarm Thread has Inserted Alarm_Request_Type %s Request(%d) at %ld: Time = %d Message = %s into Circular_Buffer Index: %d\n",
                alarm_type_to_string(alarm->alarm_type), // You need to implement this function to convert enum to string
                alarm->id, insert_time, alarm->seconds, alarm->message, circ_buff.insert_at);
 
@@ -368,62 +371,74 @@ void *consumer_thread(void *arg) {
 }
 
 
-void handle_start_alarm(alarm_t *alarm) {
-    int status;
-    struct timespec cond_time;
-    time_t now = time(NULL);
-    int expired = 0;
+void handle_start_alarm(alarm_t *new_alarm) {
+    // insert the new alarm
+    alarm_insert(new_alarm);
 
-    pthread_mutex_lock(&alarm_mutex);  // Ensure mutex is locked before waiting
-
-    if (alarm->time > now) {
-#ifdef DEBUG
-        printf("[waiting: %d(%d)\"%s\"]\n", alarm->time,
-            alarm->time - time(NULL), alarm->message);
-#endif
-        cond_time.tv_sec = alarm->time;
-        cond_time.tv_nsec = 0;
-        current_alarm = alarm->time;
-
-        while (current_alarm == alarm->time) {
-            // process the time in the alarm below until the cond_time expires or the alarm_cond is signaled
-            status = pthread_cond_timedwait(&alarm_cond, &alarm_mutex, &cond_time);
-
-            // checks if the time expired
-            if (status == ETIMEDOUT) {
-                expired = 1;
-                break;
-            }
-
-            // error check from call
-            if (status != 0)
-                err_abort(status, "Cond timedwait");
+    // Check if the Time value of this start_alarm is unique in the Alarm List
+    bool is_unique_time = true;
+    for (alarm_t *iter = alarm_list; iter != NULL; iter = iter->link) {
+        if (iter != new_alarm && iter->time == new_alarm->time) {
+            is_unique_time = false;
+            break;
         }
-
-        if (!expired) {
-            alarm_insert(alarm);  // Re-insert the alarm if it was not processed
-        }
-    } else {
-        // alarm already expired
-        expired = 1;
     }
-
-    pthread_mutex_unlock(&alarm_mutex);  // Unlock mutex after processing
-
-    // print the expired alarm
-    if (expired) {
-        printf("Expired: (%d) %s\n", alarm->seconds, alarm->message);
-        free(alarm);
+    
+    // If the time is unique, create a new periodic display thread
+    pthread_t display_thread_id;
+    if (is_unique_time) {
+        display_thread_id = create_periodic_display_thread(new_alarm); // Ensure this function is implemented
+        time_t create_time = time(NULL);
+        printf("Alarm Thread Created New Periodic display thread <%lu> For Alarm(%d) at %ld: For New Time Value = %d Message = %s\n",
+               (unsigned long)display_thread_id, new_alarm->id, create_time, new_alarm->seconds, new_alarm->message);
     }
 }
 
-void handle_change_alarm(alarm_t *alarm) {
-    // Placeholder for the actual logic to handle change alarm
+void handle_change_alarm(alarm_t *new_alarm) {
+    // insert the alarm into the list
+    alarm_insert(new_alarm);
+    
+    // Check if the Time value of this change_alarm is unique
+    bool is_unique_time = true;
+    alarm_t *alarm = alarm_list;
+    while (alarm != NULL) {
+        if (alarm != new_alarm && alarm->time == new_alarm->time) {
+            is_unique_time = false;
+            break;
+        }
+        alarm = alarm->link;
+    }
+
+    // Remove all other alarms with the same Alarm_ID, except the newly inserted one
+    alarm_t **current = &alarm_list;
+    alarm_t *temp;
+    while (*current != NULL) {
+        if ((*current)->id == new_alarm->id && *current != new_alarm) {
+            temp = *current;
+            *current = (*current)->link;
+            free(temp); // free the memory of the removed alarm
+        } else {
+            current = &(*current)->link;
+        }
+    }
+    
+    // If the time is unique, create a new periodic display thread
+    if (is_unique_time) {
+        pthread_t display_thread_id = create_periodic_display_thread(new_alarm);
+        time_t create_time = time(NULL);
+        printf("Alarm Thread Created New Periodic display thread <%lu> For Alarm(%d) at %ld: For New Time Value = %d Message = %s\n",
+               (unsigned long)display_thread_id, new_alarm->id, create_time, new_alarm->seconds, new_alarm->message);
+    }
+
+    // Print change confirmation
+    time_t change_time = time(NULL);
+    printf("Alarm Thread<%lu> at %ld Has Removed All Alarm Requests With "
+           "Alarm ID %d From Alarm List Except The Most Recent Change Alarm "
+           "Request(%d) Time = %d Message = %s\n",
+           (unsigned long)pthread_self(), change_time, alarm->id, alarm->id, alarm->seconds, alarm->message);
 }
 
 void handle_cancel_alarm(int alarm_id) {
-    pthread_mutex_lock(&alarm_mutex);
-    
     // Temporary pointer for alarms to be freed
     alarm_t *to_free;
     
@@ -445,11 +460,70 @@ void handle_cancel_alarm(int alarm_id) {
         }
     }
     
-    pthread_mutex_unlock(&alarm_mutex);
-
     // After the alarms are removed, print the cancellation confirmation
     time_t remove_time = time(NULL);
     printf("Alarm Thread %lu Has Cancelled and Removed All Alarm Requests With "
            "Alarm ID %d from Alarm List at %ld\n",
            (unsigned long)pthread_self(), alarm_id, remove_time);
+    
+}
+
+void* periodic_display_thread(void* arg) {
+    periodic_display_args_t* display_args = (periodic_display_args_t*)arg;
+
+    while (true) {
+        // Your logic for checking if the alarm should still be displayed goes here
+
+        printf("ALARM MESSAGE (%d) PRINTED BY ALARM DISPLAY THREAD %lu at %ld: TIME = %d MESSAGE = %s\n",
+               display_args->id,
+               (unsigned long)pthread_self(),
+               (long)time(NULL),
+               display_args->seconds,
+               display_args->message);
+
+        // Sleep for the specified number of seconds
+        sleep(display_args->seconds);
+    }
+
+    free(display_args);
+    return NULL;
+}
+
+pthread_t create_periodic_display_thread(alarm_t *alarm) {
+    pthread_t thread_id;
+    periodic_display_args_t* args = malloc(sizeof(periodic_display_args_t));
+    if (args == NULL) {
+        // Handle memory allocation failure
+        exit(EXIT_FAILURE);
+    }
+    
+    // Set the arguments for the new thread
+    args->id = alarm->id;
+    args->seconds = alarm->seconds;
+    strncpy(args->message, alarm->message, MAX_MESSAGE_LENGTH);
+
+    // Create the thread
+    int status = pthread_create(&thread_id, NULL, periodic_display_thread, args);
+    if (status != 0) {
+        // Handle thread creation failure
+        err_abort(status, "Create periodic display thread");
+    }
+
+    // Return the thread ID
+    return thread_id;
+}
+
+void initialize_circular_buffer() {
+    circ_buff.insert_at = 0;
+    circ_buff.remove_at = 0;
+    circ_buff.count = 0;
+    pthread_mutex_init(&circ_buff.mutex, NULL);
+    pthread_cond_init(&circ_buff.not_empty, NULL);
+    pthread_cond_init(&circ_buff.not_full, NULL);
+}
+
+void destroy_circular_buffer() {
+    pthread_mutex_destroy(&circ_buff.mutex);
+    pthread_cond_destroy(&circ_buff.not_empty);
+    pthread_cond_destroy(&circ_buff.not_full);
 }
